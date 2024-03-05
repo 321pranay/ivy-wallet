@@ -151,3 +151,81 @@ jobs:
             ${{ steps.Changelog.outputs.changelog }}
           draft: false
           prerelease: false
+
+  github_release_apk:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout GIT
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 #Fetch all history for all branches and tags
+
+      - name: Setup Java SDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'adopt'
+          java-version: '18'
+
+      - name: Setup Ruby (for Fastlane)
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.2'
+
+      - name: Install Fastlane
+        run: bundle install
+      #----------------------------------------------------
+
+      #Security
+      - name: Validate Gradle Wrapper checksum
+        uses: gradle/wrapper-validation-action@v2
+
+      - name: Make Gradle Wrapper (gradlew) executable
+        run: chmod +x gradlew
+      #----------------------------------------------------
+
+      #Optimization
+      - name: Enable Gradle Wrapper caching (optmization)
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+          restore-keys: |
+            ${{ runner.os }}-gradle-
+      #---------------------------------------------------
+
+      #Run Unit Tests (Unit tests can be run by Fastlane)
+      #- name: Run Unit tests
+      #  working-directory: ./app
+      #  run: ./gradlew testDebugUnitTest
+      #-------------------------------------------------------------------
+
+      #Decode Secrets for production build
+      - name: Create JKS for prod signing
+        run: |
+          echo "$SIGNING_KEYSTORE_JKS" > sign.jks.b64
+          base64 -d -i sign.jks.b64 > sign.jks
+        env:
+          SIGNING_KEYSTORE_JKS: ${{ secrets.SIGNING_KEYSTORE }}
+
+      #Run UI tests & Lint analysis
+      - name: Verify that the code is release-able ("lintRelease")
+        run: bundle exec fastlane lint_release
+
+      #--------------------------------------------------------------------------
+
+      #Fastlane: Build production .aab and release it to Internal Testing
+      - name: Build production App Bundle
+        run: bundle exec fastlane production_build_apk
+        env:
+          SIGNING_KEY_ALIAS: ${{ secrets.SIGNING_KEY_ALIAS }}
+          SIGNING_KEY_PASSWORD: ${{ secrets.SIGNING_KEY_PASSWORD }}
+          SIGNING_STORE_PASSWORD: ${{ secrets.SIGNING_STORE_PASSWORD }}
+
+      - name: Upload App Bundle to GitHub
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-release.apk
+          path: app/build/outputs/bundle/release/app-release.apk

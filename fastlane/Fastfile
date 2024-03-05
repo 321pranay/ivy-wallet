@@ -59,6 +59,18 @@ platform :android do
         )
     end
 
+    desc "Builds release app (APK)"
+    lane :production_build_apk do
+        gradle(
+            task: "clean"
+        )
+
+        gradle(
+            task: "assemble",
+            build_type: "Release"
+        )
+    end
+
     desc "Cleans the project"
     lane :clean do
         gradle(
